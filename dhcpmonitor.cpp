@@ -109,7 +109,7 @@ void initNcurses() {
 
 /** Print header of ncurses win */
 void ncurseHeaderPrint() {
-    printw("IP-Prefix\tMax-hosts\tAllocated\taddresses\tUtilization\n");
+    printw("IP-Prefix\t\tMax-hosts\tAllocated\taddresses\tUtilization\t\n");
 }
 
 /** 
@@ -120,7 +120,13 @@ void ncurseHeaderPrint() {
 void ncurseWindowPrint(options_t options) {
     initNcurses();
 
+    start_color();
+    init_pair(1, COLOR_BLACK, COLOR_WHITE);
+
+    attron(COLOR_PAIR(1));
     ncurseHeaderPrint();
+    attroff(COLOR_PAIR(1));
+
     for (subnet_t prefix : options.prefixes) {
         printw("%s\n", inet_ntoa(prefix.address));
     }
