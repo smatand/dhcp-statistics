@@ -8,6 +8,9 @@
 // for inet_pton (convert to IPv4)
 #include <arpa/inet.h>
 
+// terminal output
+#include <ncurses.h>
+
 
 /** Subnet */
 typedef struct Subnet {
@@ -76,8 +79,6 @@ options_t parseOptions(int argc, char * argv[]) {
     while ((opt = getopt(argc, argv, "-r:-i:")) != -1) {
         switch (opt) {
             case 'r':
-                // todo: check for its existence
-                // todo: check what is it for?
                 options.filename = optarg;
                 break;
             case 'i':
@@ -99,9 +100,50 @@ options_t parseOptions(int argc, char * argv[]) {
     return options;
 }
 
+/** Initialize ncurses */
+void initNcurses() {
+    initscr();
+    cbreak(); // handle the CTRL+C key, but do not buffer input
+    noecho(); // do not show any user input
+}
+
+/** Print header of ncurses win */
+void ncurseHeaderPrint() {
+    printw("IP-Prefix\tMax-hosts\tAllocated\taddresses\tUtilization\n");
+}
+
+/** 
+ * Ncurses dynamic window 
+ * 
+ * @param options Options for printing prefixes
+ * */
+void ncurseWindowPrint(options_t options) {
+    initNcurses();
+
+    ncurseHeaderPrint();
+    for (subnet_t prefix : options.prefixes) {
+        printw("%s\n", inet_ntoa(prefix.address));
+    }
+}
+
 int main(int argc, char * argv[]) {
     options_t options = parseOptions(argc, argv);
 
+    int n = 0; // tbd
+    while (true) {
+        ncurseWindowPrint(options);
+        printw("%d", n);
+
+        sleep(1);
+        refresh();
+        erase();
+
+        n++; // tbd
+    }
+
+    endwin();
+
+    #ifdef DEBUG
     setlogmask(LOG_UPTO (LOG_NOTICE));
 
     openlog("exampleprog", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
@@ -117,4 +159,5 @@ int main(int argc, char * argv[]) {
     }
 
     closelog();
+    #endif // DEBUG
 }
