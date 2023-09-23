@@ -3,7 +3,11 @@
 #include <string>
 #include <unistd.h>
 
+#include <syslog.h>
+
+// for inet_pton (convert to IPv4)
 #include <arpa/inet.h>
+
 
 /** Subnet */
 typedef struct Subnet {
@@ -98,14 +102,19 @@ options_t parseOptions(int argc, char * argv[]) {
 int main(int argc, char * argv[]) {
     options_t options = parseOptions(argc, argv);
 
+    setlogmask(LOG_UPTO (LOG_NOTICE));
+
+    openlog("exampleprog", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
+
     if (!options.filename.empty()) {
-        std::cout << "File: " << options.filename << std::endl;
+        syslog(LOG_NOTICE, "File: %s", options.filename.c_str());
     }
     if (!options.interface.empty()) {
-        std::cerr << "Interface: " << options.interface << std::endl;
+        syslog(LOG_NOTICE, "Interface: %s", options.interface.c_str());
     }
     for (auto prefix : options.prefixes) {
-        std::cout << "Prefix: " << inet_ntoa(prefix.address) << "/" << prefix.mask << std::endl;
+        syslog(LOG_NOTICE, "Prefix: %s/%d", inet_ntoa(prefix.address), prefix.mask);
     }
 
+    closelog();
 }
