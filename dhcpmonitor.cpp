@@ -14,6 +14,7 @@
 
 /** Subnet */
 typedef struct Subnet {
+    std::string to_print;
     struct in_addr address;
     uint32_t mask;
 } subnet_t;
@@ -62,6 +63,8 @@ subnet_t parseNetworkPrefix(std::string prefix) {
     std::string mask = prefix.substr(pos + 1);
     subnet.mask = std::stoi(mask);
 
+    subnet.to_print = prefix;
+
     return subnet;
 }
 
@@ -109,7 +112,23 @@ void initNcurses() {
 
 /** Print header of ncurses win */
 void ncurseHeaderPrint() {
-    printw("IP-Prefix\t\tMax-hosts\tAllocated\taddresses\tUtilization\t\n");
+    printw("IP-Prefix\t\tMax-hosts\tAllocated addresses\tUtilization\t\n");
+}
+
+
+/**
+ * Get maximum count of hosts in subnet
+ * 
+ * @param mask Subnet mask 
+*/
+uint32_t getHostsCount(uint32_t mask) {
+    if (mask == 32) {
+        return 1;
+    } else if (mask == 31) {
+        return 2;
+    }
+
+    return (1 << (32 - mask)) - 2;
 }
 
 /** 
@@ -117,7 +136,7 @@ void ncurseHeaderPrint() {
  * 
  * @param options Options for printing prefixes
  * */
-void ncurseWindowPrint(options_t options) {
+void ncurseWindowPrint(const options_t * options) {
     initNcurses();
 
     start_color();
@@ -127,8 +146,11 @@ void ncurseWindowPrint(options_t options) {
     ncurseHeaderPrint();
     attroff(COLOR_PAIR(1));
 
-    for (subnet_t prefix : options.prefixes) {
-        printw("%s\n", inet_ntoa(prefix.address));
+    for (const subnet_t &prefix : options->prefixes) {
+        printw("%-18s\t%-10d\n", 
+            prefix.to_print.c_str(),
+            getHostsCount(prefix.mask)
+        );
     }
 }
 
@@ -137,7 +159,7 @@ int main(int argc, char * argv[]) {
 
     int n = 0; // tbd
     while (true) {
-        ncurseWindowPrint(options);
+        ncurseWindowPrint(&options);
         printw("%d", n);
 
         sleep(1);
