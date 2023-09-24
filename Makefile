@@ -10,7 +10,7 @@ OBJECTS := dhcpmonitor.o
 all: dhcp-stats
 
 dhcp-stats: $(OBJECTS)
-	$(CXX) $(CXXFLAGS) -o $@ $^ -lncurses
+	$(CXX) $(CXXFLAGS) -o $@ $^ -lncurses -lpcap
 
 %.o: %.cpp %.h
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
