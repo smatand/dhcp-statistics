@@ -77,6 +77,8 @@ typedef struct Options {
     std::vector<subnet_t> prefixes;
     // whether it's a pcap file or interface
     uint8_t mode;
+
+    uint32_t count;
 } options_t;
 
 /**
@@ -151,6 +153,8 @@ options_t parseOptions(int argc, char * argv[]) {
         exitWithError("Specify either -r or -i option.");
     }
 
+    options.count = options.prefixes.size();
+
     return options;
 }
 
@@ -219,8 +223,6 @@ void packet_callback(u_char * handle, const struct pcap_pkthdr * header, const u
     (void) header;
 
     if (ntohs(ethernet->ether_type) == ETHERTYPE_IP) {
-        //struct ip * ip = (struct ip *) (packet + sizeof(struct ether_header));
-        //struct udphdr * udp = (struct udphdr *) (packet + sizeof(struct ip) + sizeof(struct ether_header));
         struct dhcp_packet * dhcp = (struct dhcp_packet *) (packet + sizeof(struct udphdr) + sizeof(struct ip) + sizeof(struct ether_header));
 
         if (dhcp->options[6] == DHCPACK) {
