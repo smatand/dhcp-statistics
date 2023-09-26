@@ -72,8 +72,6 @@ typedef struct Options {
     std::string interface;
     // whether it's a pcap file or interface
     uint8_t mode;
-
-    uint32_t count;
 } options_t;
 
 /**
@@ -149,8 +147,6 @@ options_t parseOptions(int argc, char * argv[]) {
         exitWithError("Specify either -r or -i option.");
     }
 
-    options.count = subnets.size();
-
     return options;
 }
 
@@ -159,11 +155,6 @@ void initNcurses() {
     initscr();
     cbreak(); // handle the CTRL+C key, but do not buffer input
     noecho();
-}
-
-/** Print header of ncurses win */
-void ncurseHeaderPrint() {
-    printw("IP-Prefix\t\tMax-hosts\tAllocated addresses\tUtilization\t\n");
 }
 
 
@@ -182,12 +173,18 @@ uint32_t getHostsCount(uint32_t mask) {
     return (1 << (32 - mask)) - 2;
 }
 
+
+/** Print header of ncurses win */
+void ncurseHeaderPrint() {
+    printw("IP-Prefix\t\tMax-hosts\tAllocated addresses\tUtilization\t\n");
+}
+
 /** 
  * Ncurses dynamic window 
  * 
  * @param options Options for printing prefixes
  * */
-void ncurseWindowPrint(const options_t * options) {
+void ncurseWindowPrint() {
     initNcurses();
 
     start_color();
@@ -198,11 +195,29 @@ void ncurseWindowPrint(const options_t * options) {
     attroff(COLOR_PAIR(1));
 
     for (const subnet_t &prefix : subnets) {
-        printw("%-18s\t%-10d\n", 
+        printw("%-18s\t%-10d\t%-10d\t%-4f\n", 
             prefix.to_print.c_str(),
-            prefix.max_hosts
+            prefix.max_hosts,
+            prefix.allocated,
+            (float) prefix.allocated / prefix.max_hosts * 100
         );
     }
+}
+
+/**
+ * Check whether the address is in the subnet
+ * 
+ * @param address address to be checked
+ * @param subnet subnet 
+ * 
+ * @return true if address is in subnet, false otherwise 
+*/
+bool isIpInSubnet(struct in_addr address, subnet_t subnet) {
+    uint32_t addr = ntohl(address.s_addr);
+    uint32_t net = ntohl(subnet.address.s_addr); 
+    uint32_t mask = ntohl(subnet.mask);
+
+    return (addr & mask) == (net & mask);
 }
 
 /**
@@ -211,7 +226,12 @@ void ncurseWindowPrint(const options_t * options) {
  * @param address Address to be added
 */
 void addAddress(struct in_addr address) {
-
+    for (subnet_t &prefix : subnets) {
+        if (isIpInSubnet(address, prefix)) {
+            prefix.allocated++;
+            return;
+        }
+    }
 }
 
 /**
@@ -221,7 +241,7 @@ void addAddress(struct in_addr address) {
  * @param header Header of the packet
  * @param packet packet
 */
-void packet_callback(u_char * handle, const struct pcap_pkthdr * header, const u_char * packet) {
+void packetCallback(u_char * handle, const struct pcap_pkthdr * header, const u_char * packet) {
     struct ether_header * ethernet = (struct ether_header *) packet;
 
     (void) handle;
@@ -231,14 +251,21 @@ void packet_callback(u_char * handle, const struct pcap_pkthdr * header, const u
         struct dhcp_packet * dhcp = (struct dhcp_packet *) (packet + sizeof(struct udphdr) + sizeof(struct ip) + sizeof(struct ether_header));
 
         if (dhcp->options[6] == DHCPACK) {
-            std::cout << "DHCP ACK" << std::endl;
             addAddress(dhcp->yiaddr);
         } else if (dhcp->options[6] == DHCPDECLINE) {
             std::cout << "DHCP DECLINE" << std::endl;
         }
-
-
     }
+
+    for (const subnet_t &prefix : subnets) {
+        std::cout << prefix.to_print << " " << prefix.allocated << std::endl;
+    }
+//    ncurseWindowPrint();
+//    sleep(1);
+//    refresh();
+//    erase();
+//
+//    endwin();
 }
 
 /** 
@@ -314,14 +341,12 @@ int main(int argc, char * argv[]) {
         exitWithError("Unable to install filter.");
     }
 
-    pcap_loop(handle, 0, packet_callback, nullptr);
+    pcap_loop(handle, 0, packetCallback, nullptr);
 
     #ifdef DEBUG
-    int n = 0; // tbd
     while (n < 10) {
         ncurseWindowPrint(&options);
         printw("%d", n);
-        std::cout << "CISLO" << std::endl;
         sleep(1);
         refresh();
         erase();
