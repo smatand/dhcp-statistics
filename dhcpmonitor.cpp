@@ -8,11 +8,6 @@
 // for inet_pton (convert to IPv4)
 #include <arpa/inet.h>
 #include <pcap/pcap.h>
-//#include <sys/socket.h>
-//#include <netinet/in.h>
-//#include <arpa/inet.h>
-//#include <netinet/if_ether.h> /* includes net/ethernet.h */
-//#include <net/ethernet.h>
 
 #include <netinet/in.h>
 #include <netinet/ether.h>
@@ -53,15 +48,17 @@ struct dhcp_packet {
 	    char options[MAX_DHCP_OPTIONS_LENGTH];  /* options */
 };
 
-
-
 /** Subnet */
 typedef struct Subnet {
     std::string to_print;
     struct in_addr address;
     uint32_t mask;
+
+    uint32_t allocated;
+    uint32_t max_hosts;
 } subnet_t;
 
+std::vector<subnet_t> subnets{};
 /**
  * Options
  * -r <filename> - statistics will be created from pcap files
@@ -73,8 +70,6 @@ typedef struct Options {
     std::string filename;
     // may be optional
     std::string interface;
-    // a set of prefixes to be monitored
-    std::vector<subnet_t> prefixes;
     // whether it's a pcap file or interface
     uint8_t mode;
 
@@ -111,6 +106,7 @@ subnet_t parseNetworkPrefix(std::string prefix) {
     subnet.mask = std::stoi(mask);
 
     subnet.to_print = prefix;
+    subnet.max_hosts = subnet.mask;
 
     return subnet;
 }
@@ -140,12 +136,12 @@ options_t parseOptions(int argc, char * argv[]) {
                 if (optarg[0] == '-') {
                     exitWithError("Unknown option: " + std::string{optarg});
                 } else {
-                    options.prefixes.push_back(parseNetworkPrefix(optarg));
+                    subnets.push_back(parseNetworkPrefix(optarg));
                 }
         }
     }
 
-    if (options.prefixes.empty()) {
+    if (subnets.empty()) {
         exitWithError("No prefixes specified");
     }
 
@@ -153,7 +149,7 @@ options_t parseOptions(int argc, char * argv[]) {
         exitWithError("Specify either -r or -i option.");
     }
 
-    options.count = options.prefixes.size();
+    options.count = subnets.size();
 
     return options;
 }
@@ -201,12 +197,21 @@ void ncurseWindowPrint(const options_t * options) {
     ncurseHeaderPrint();
     attroff(COLOR_PAIR(1));
 
-    for (const subnet_t &prefix : options->prefixes) {
+    for (const subnet_t &prefix : subnets) {
         printw("%-18s\t%-10d\n", 
             prefix.to_print.c_str(),
-            getHostsCount(prefix.mask)
+            prefix.max_hosts
         );
     }
+}
+
+/**
+ * Add address to the prefix
+ * 
+ * @param address Address to be added
+*/
+void addAddress(struct in_addr address) {
+
 }
 
 /**
@@ -227,6 +232,7 @@ void packet_callback(u_char * handle, const struct pcap_pkthdr * header, const u
 
         if (dhcp->options[6] == DHCPACK) {
             std::cout << "DHCP ACK" << std::endl;
+            addAddress(dhcp->yiaddr);
         } else if (dhcp->options[6] == DHCPDECLINE) {
             std::cout << "DHCP DECLINE" << std::endl;
         }
