@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <unistd.h>
+#include <algorithm>
 
 #include <syslog.h>
 
@@ -48,6 +49,7 @@ struct dhcp_packet {
 	    char options[MAX_DHCP_OPTIONS_LENGTH];  /* options */
 };
 
+
 /** Subnet */
 typedef struct Subnet {
     std::string to_print;
@@ -56,6 +58,8 @@ typedef struct Subnet {
 
     uint32_t allocated;
     uint32_t max_hosts;
+
+    std::vector<std::string> hosts;
 } subnet_t;
 
 std::vector<subnet_t> subnets{};
@@ -84,6 +88,28 @@ void exitWithError(std::string message) {
     std::exit(1);
 }
 
+/**
+ * Get maximum count of hosts in subnet
+ * 
+ * @param mask Subnet mask 
+*/
+uint32_t getHostsCount(uint32_t mask) {
+    if (mask == 32) {
+        return 1;
+    } else if (mask == 31) {
+        return 2;
+    }
+
+    return (1 << (32 - mask)) - 2;
+}
+
+/**
+ * Parse network prefix
+ * 
+ * @param prefix Network prefix X.X.X.X/Y
+ * 
+ * @return subnet_t subnet structure 
+*/
 subnet_t parseNetworkPrefix(std::string prefix) {
     subnet_t subnet;
 
@@ -104,7 +130,7 @@ subnet_t parseNetworkPrefix(std::string prefix) {
     subnet.mask = std::stoi(mask);
 
     subnet.to_print = prefix;
-    subnet.max_hosts = subnet.mask;
+    subnet.max_hosts = getHostsCount(subnet.mask);
 
     return subnet;
 }
@@ -153,26 +179,10 @@ options_t parseOptions(int argc, char * argv[]) {
 /** Initialize ncurses */
 void initNcurses() {
     initscr();
-    cbreak(); // handle the CTRL+C key, but do not buffer input
-    noecho();
+    erase();
+    //cbreak(); // handle the CTRL+C key, but do not buffer input
+    //noecho();
 }
-
-
-/**
- * Get maximum count of hosts in subnet
- * 
- * @param mask Subnet mask 
-*/
-uint32_t getHostsCount(uint32_t mask) {
-    if (mask == 32) {
-        return 1;
-    } else if (mask == 31) {
-        return 2;
-    }
-
-    return (1 << (32 - mask)) - 2;
-}
-
 
 /** Print header of ncurses win */
 void ncurseHeaderPrint() {
@@ -195,13 +205,16 @@ void ncurseWindowPrint() {
     attroff(COLOR_PAIR(1));
 
     for (const subnet_t &prefix : subnets) {
-        printw("%-18s\t%-10d\t%-10d\t%-4f\n", 
+        printw("%-18s\t%-10d\t%-10d\t\t%-4f\n", 
             prefix.to_print.c_str(),
             prefix.max_hosts,
             prefix.allocated,
             (float) prefix.allocated / prefix.max_hosts * 100
         );
     }
+
+    refresh();
+    timeout(1000);
 }
 
 /**
@@ -228,7 +241,18 @@ bool isIpInSubnet(struct in_addr address, subnet_t subnet) {
 void addAddress(struct in_addr address) {
     for (subnet_t &prefix : subnets) {
         if (isIpInSubnet(address, prefix)) {
+            std::string address_str = inet_ntoa(address);
+            // FOR DEBUGGING PURPOSES TODO: REMOVE
+            // check whether the address is already in the vector
+            if (std::find(prefix.hosts.begin(), prefix.hosts.end(), address_str) != prefix.hosts.end()) {
+                return;
+            }
+
             prefix.allocated++;
+
+
+            prefix.hosts.push_back(inet_ntoa(address));
+
             return;
         }
     }
@@ -250,22 +274,17 @@ void packetCallback(u_char * handle, const struct pcap_pkthdr * header, const u_
     if (ntohs(ethernet->ether_type) == ETHERTYPE_IP) {
         struct dhcp_packet * dhcp = (struct dhcp_packet *) (packet + sizeof(struct udphdr) + sizeof(struct ip) + sizeof(struct ether_header));
 
+        // https://cs.uwaterloo.ca/twiki/pub/CF/DhcpDebug/dhcp.c
         if (dhcp->options[6] == DHCPACK) {
+            // ciaddr : will be filled by client and is used only in BOUND,RENEW and REBINDING state
+            // yiaddr :Filled by server and sent to client in DHCPOFFER and DHCPACK.
             addAddress(dhcp->yiaddr);
         } else if (dhcp->options[6] == DHCPDECLINE) {
             std::cout << "DHCP DECLINE" << std::endl;
         }
     }
 
-    for (const subnet_t &prefix : subnets) {
-        std::cout << prefix.to_print << " " << prefix.allocated << std::endl;
-    }
-//    ncurseWindowPrint();
-//    sleep(1);
-//    refresh();
-//    erase();
-//
-//    endwin();
+    ncurseWindowPrint();
 }
 
 /** 
@@ -339,6 +358,11 @@ int main(int argc, char * argv[]) {
 
     if (pcap_setfilter(handle, &fp) == -1) {
         exitWithError("Unable to install filter.");
+    }
+
+    if (options.mode == 2) {
+        initscr(); 
+        ncurseWindowPrint();
     }
 
     pcap_loop(handle, 0, packetCallback, nullptr);
