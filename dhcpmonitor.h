@@ -46,6 +46,9 @@ typedef struct Subnet {
     uint32_t max_hosts;
     float utilization;
 
+    bool warning_printed;
+    bool critical_warning_printed;
+
     std::vector<std::string> hosts;
 } subnet_t;
 

@@ -84,6 +84,8 @@ subnet_t parseNetworkPrefix(std::string prefix) {
     subnet.max_hosts = getHostsCount(mask);
     subnet.allocated = 0;
     subnet.utilization = 0.0;
+    subnet.critical_warning_printed = false;
+    subnet.warning_printed = false;
 
     return subnet;
 }
@@ -182,8 +184,6 @@ void ncurseWindowPrint() {
             prefix.allocated,
             prefix.utilization
         );
-
-        std::cerr << "UTILIZATION " << prefix.utilization << std::endl;
     }
 
     refresh();
@@ -215,6 +215,46 @@ bool isIpInSubnet(struct in_addr address, subnet_t subnet) {
 }
 
 /**
+ * Print warning to syslog and stdout if 50 % of the prefix is allocated
+ * 
+ * @param prefix Prefix to be printed
+ * 
+ * @return true if the warning has been printed
+*/
+bool printWarning(std::string prefix) {
+    syslog(LOG_NOTICE, "prefix %s exceeded 50%% of allocations", prefix.c_str());
+    std::cout << "prefix " << prefix << " exceeded 50% of allocations" << std::endl;
+
+    return true;
+}
+
+/**
+ * Print critical warning to syslog and stdout if 80 % of the prefix is allocated
+ * 
+ * @param prefix Prefix to be printed
+ * 
+ * @return true if the warning has been printed
+*/
+bool printCritical(std::string prefix) {
+    syslog(LOG_NOTICE, "prefix %s exceeded 80%% of allocations (critical)", prefix.c_str());
+
+    return true;
+}
+
+/**
+ * Print information about 100 % of the prefix is allocated
+ * 
+ * @param prefix Prefix to be printed
+ * 
+ * @return true if the warning has been printed
+*/
+bool printFullUtilization(std::string prefix) {
+    syslog(LOG_NOTICE, "no more addresses in prefix %s", prefix.c_str());
+
+    return true;
+}
+
+/**
  * Add address to the prefix
  * 
  * @param address Address to be added
@@ -223,13 +263,21 @@ void addAddress(struct in_addr address) {
     for (subnet_t &prefix : subnets) {
         if (isIpInSubnet(address, prefix)) {
             std::string address_str = inet_ntoa(address);
-            // FOR DEBUGGING PURPOSES TODO: REMOVE
-            // check whether the address is already in the vector
+
+            // check whether the address is already counted in monitoring of the prefix
             if (std::find(prefix.hosts.begin(), prefix.hosts.end(), address_str) != prefix.hosts.end()) {
                 return;
             }
             prefix.allocated++;
             prefix.utilization = static_cast<float>(prefix.allocated) / prefix.max_hosts * 100;
+
+            if (prefix.utilization >= 50.0 && !prefix.warning_printed) {
+                prefix.warning_printed = printWarning(prefix.to_print);
+            } 
+            
+            if (prefix.utilization >= 80.0 && !prefix.critical_warning_printed) {
+                prefix.critical_warning_printed = printCritical(prefix.to_print);
+            }
 
             prefix.hosts.push_back(inet_ntoa(address));
         }
@@ -314,6 +362,8 @@ pcap_t * openPcapLive(std::string interface) {
 int main(int argc, char * argv[]) {
     options_t options = parseOptions(argc, argv);
     pcap_t * handle;
+    setlogmask(LOG_UPTO (LOG_NOTICE));
+    openlog("dhcp-stats", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
 
     switch (options.mode) {
         case 1:
@@ -346,33 +396,5 @@ int main(int argc, char * argv[]) {
 
     pcap_loop(handle, 0, packetCallback, nullptr);
 
-    #ifdef DEBUG
-    while (n < 10) {
-        ncurseWindowPrint(&options);
-        printw("%d", n);
-        sleep(1);
-        refresh();
-        erase();
-
-        n++; // tbd
-    }
-
-    endwin();
-
-    setlogmask(LOG_UPTO (LOG_NOTICE));
-
-    openlog("exampleprog", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
-
-    if (!options.filename.empty()) {
-        syslog(LOG_NOTICE, "File: %s", options.filename.c_str());
-    }
-    if (!options.interface.empty()) {
-        syslog(LOG_NOTICE, "Interface: %s", options.interface.c_str());
-    }
-    for (auto prefix : options.prefixes) {
-        syslog(LOG_NOTICE, "Prefix: %s/%d", inet_ntoa(prefix.address), prefix.mask);
-    }
-
     closelog();
-    #endif // DEBUG
 }
