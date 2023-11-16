@@ -18,65 +18,9 @@
 // terminal output
 #include <ncurses.h>
 
-#define MAX_DHCP_CHADDR_LENGTH           16
-#define MAX_DHCP_SNAME_LENGTH            64
-#define MAX_DHCP_FILE_LENGTH             128
-#define MAX_DHCP_OPTIONS_LENGTH          312
-
-#define DHCPDISCOVER    1
-#define DHCPOFFER       2
-#define DHCPREQUEST     3
-#define DHCPDECLINE     4
-#define DHCPACK         5
-#define DHCPNACK        6
-#define DHCPRELEASE     7
-
-struct dhcp_packet {
-        u_int8_t  op;                   /* packet type */
-        u_int8_t  htype;                /* type of hardware address for this machine (Ethernet, etc) */
-        u_int8_t  hlen;                 /* length of hardware address (of this machine) */
-        u_int8_t  hops;                 /* hops */
-        u_int32_t xid;                  /* random transaction id number - chosen by this machine */
-        u_int16_t secs;                 /* seconds used in timing */
-        u_int16_t flags;                /* flags */
-        struct in_addr ciaddr;          /* IP address of this machine (if we already have one) */
-        struct in_addr yiaddr;          /* IP address of this machine (offered by the DHCP server) */
-        struct in_addr siaddr;          /* IP address of DHCP server */
-        struct in_addr giaddr;          /* IP address of DHCP relay */
-        unsigned char chaddr [MAX_DHCP_CHADDR_LENGTH];      /* hardware address of this machine */
-        char sname [MAX_DHCP_SNAME_LENGTH];    /* name of DHCP server */
-        char file [MAX_DHCP_FILE_LENGTH];      /* boot file name (used for diskless booting?) */
-	    char options[MAX_DHCP_OPTIONS_LENGTH];  /* options */
-};
-
-
-/** Subnet */
-typedef struct Subnet {
-    std::string to_print;
-    struct in_addr address;
-    uint32_t mask;
-
-    uint32_t allocated;
-    uint32_t max_hosts;
-
-    std::vector<std::string> hosts;
-} subnet_t;
+#include "dhcpmonitor.h"
 
 std::vector<subnet_t> subnets{};
-/**
- * Options
- * -r <filename> - statistics will be created from pcap files
- * -i <interface-name> - listen on interface
- * <ip-prefix> - print stats for this prefix
-*/
-typedef struct Options {
-    // may be optional
-    std::string filename;
-    // may be optional
-    std::string interface;
-    // whether it's a pcap file or interface
-    uint8_t mode;
-} options_t;
 
 /**
  * Exit with error message
@@ -91,13 +35,11 @@ void exitWithError(std::string message) {
 /**
  * Get maximum count of hosts in subnet
  * 
- * @param mask Subnet mask 
+ * @param s_addr subent mask in 0-32 format
 */
 uint32_t getHostsCount(uint32_t mask) {
     if (mask == 32) {
-        return 1;
-    } else if (mask == 31) {
-        return 2;
+        return 0;
     }
 
     return (1 << (32 - mask)) - 2;
@@ -119,20 +61,43 @@ subnet_t parseNetworkPrefix(std::string prefix) {
         exitWithError("Invalid prefix: " + prefix);
     }
 
-    // 0.0.0.0 - 255.255.255.255
-    // store converted address in subnet.address (in_addr)
+    // only 0.0.0.0 - 255.255.255.255
     std::string address = prefix.substr(0, pos);
-    if (inet_pton(AF_INET, address.c_str(), &subnet.address) != 1) {
+    if (inet_pton(AF_INET, address.c_str(), &subnet.network_address) != 1) {
         exitWithError("This address is not in IPv4 format: " + address);
     }
 
-    std::string mask = prefix.substr(pos + 1);
-    subnet.mask = std::stoi(mask);
+    uint32_t mask = std::stoi(prefix.substr(pos + 1));
+    if (mask == 0) {
+        exitWithError("Prefix X.X.X.X/0 is not allowed.");
+    }
+    
+    // if mask is 24, then 1 << (32 - mask) is 0x1000000
+    // 1 << (32 - mask) - 1 is 0x00FFFFFF
+    // NOT (~) flips it to 0xFF000000
+    // htonl converts it to network byte order (big endian), so it's 0x000000FF
+    subnet.mask_address.s_addr = htonl(~((1 << (32 - mask)) - 1));
+
+    subnet.broadcast_address.s_addr = subnet.network_address.s_addr | ~subnet.mask_address.s_addr;
 
     subnet.to_print = prefix;
-    subnet.max_hosts = getHostsCount(subnet.mask);
+    subnet.max_hosts = getHostsCount(mask);
+    subnet.allocated = 0;
+    subnet.utilization = 0.0;
 
     return subnet;
+}
+
+/**
+ * Compare two subnets for std::find function used in parseOptions()
+ * 
+ * @param lhs Left hand side
+ * @param rhs Right hand side
+ * 
+ * @return true if the addresses and masks are equal, false otherwise
+*/
+bool operator==(const subnet_t &lhs, const subnet_t &rhs) {
+    return lhs.network_address.s_addr == rhs.network_address.s_addr && lhs.mask_address.s_addr == rhs.mask_address.s_addr;
 }
 
 /**
@@ -160,7 +125,13 @@ options_t parseOptions(int argc, char * argv[]) {
                 if (optarg[0] == '-') {
                     exitWithError("Unknown option: " + std::string{optarg});
                 } else {
-                    subnets.push_back(parseNetworkPrefix(optarg));
+                    subnet_t subnet_to_add = parseNetworkPrefix(optarg);
+
+                    if (std::find(subnets.begin(), subnets.end(), subnet_to_add) != subnets.end()) {
+                        std::cerr << "Duplicate prefix in an argument: " << optarg << std::endl;
+                    } else {
+                        subnets.push_back(subnet_to_add);
+                    }
                 }
         }
     }
@@ -205,12 +176,14 @@ void ncurseWindowPrint() {
     attroff(COLOR_PAIR(1));
 
     for (const subnet_t &prefix : subnets) {
-        printw("%-18s\t%-10d\t%-10d\t\t%-4f\n", 
+        printw("%-18s\t%-10u\t%-10d\t\t%.2f %%\n", 
             prefix.to_print.c_str(),
             prefix.max_hosts,
             prefix.allocated,
-            (float) prefix.allocated / prefix.max_hosts * 100
+            prefix.utilization
         );
+
+        std::cerr << "UTILIZATION " << prefix.utilization << std::endl;
     }
 
     refresh();
@@ -226,11 +199,19 @@ void ncurseWindowPrint() {
  * @return true if address is in subnet, false otherwise 
 */
 bool isIpInSubnet(struct in_addr address, subnet_t subnet) {
-    uint32_t addr = ntohl(address.s_addr);
-    uint32_t net = ntohl(subnet.address.s_addr); 
-    uint32_t mask = ntohl(subnet.mask);
+    if (subnet.max_hosts == 0) {
+        return false;
+    } else if (address.s_addr == subnet.network_address.s_addr) {
+        return false;
+    } else if (address.s_addr == subnet.broadcast_address.s_addr) {
+        return false;
+    }
 
-    return (addr & mask) == (net & mask);
+    if ((address.s_addr & subnet.mask_address.s_addr) == (subnet.network_address.s_addr & subnet.mask_address.s_addr)) {
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -247,13 +228,10 @@ void addAddress(struct in_addr address) {
             if (std::find(prefix.hosts.begin(), prefix.hosts.end(), address_str) != prefix.hosts.end()) {
                 return;
             }
-
             prefix.allocated++;
-
+            prefix.utilization = static_cast<float>(prefix.allocated) / prefix.max_hosts * 100;
 
             prefix.hosts.push_back(inet_ntoa(address));
-
-            return;
         }
     }
 }
@@ -364,6 +342,7 @@ int main(int argc, char * argv[]) {
         initscr(); 
         ncurseWindowPrint();
     }
+
 
     pcap_loop(handle, 0, packetCallback, nullptr);
 
