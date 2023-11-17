@@ -17,6 +17,8 @@
 #define DHCPNACK        6
 #define DHCPRELEASE     7
 
+#define Q_UNUSED(x) (void)x;
+
 struct dhcp_packet {
         u_int8_t  op;                   /* packet type */
         u_int8_t  htype;                /* type of hardware address for this machine (Ethernet, etc) */

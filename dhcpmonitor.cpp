@@ -18,6 +18,8 @@
 // terminal output
 #include <ncurses.h>
 
+#include <csignal>
+
 #include "dhcpmonitor.h"
 
 std::vector<subnet_t> subnets{};
@@ -43,6 +45,16 @@ uint32_t getHostsCount(uint32_t mask) {
     }
 
     return (1 << (32 - mask)) - 2;
+}
+
+/**
+ * @brief Signal handler.
+ *  
+ * @param sig signal 
+*/
+void handle_exit(int sig) {
+    Q_UNUSED(sig);
+    exit(0);
 }
 
 /**
@@ -279,6 +291,10 @@ void addAddress(struct in_addr address) {
                 prefix.critical_warning_printed = printCritical(prefix.to_print);
             }
 
+            if (prefix.utilization == 100.0) {
+                printFullUtilization(prefix.to_print);
+            }
+
             prefix.hosts.push_back(inet_ntoa(address));
         }
     }
@@ -360,10 +376,16 @@ pcap_t * openPcapLive(std::string interface) {
 }
 
 int main(int argc, char * argv[]) {
+    #ifndef __linux__
+        std::cerr << "ERROR: This program is only supported on Linux." << std::endl;
+        exit(2);
+    #endif
+
     options_t options = parseOptions(argc, argv);
     pcap_t * handle;
     setlogmask(LOG_UPTO (LOG_NOTICE));
     openlog("dhcp-stats", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
+    std::signal(SIGINT, handle_exit);
 
     switch (options.mode) {
         case 1:
