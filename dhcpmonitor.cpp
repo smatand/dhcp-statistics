@@ -24,21 +24,11 @@
 
 std::vector<subnet_t> subnets{};
 
-/**
- * Exit with error message
- * 
- * @param message Error message
-*/
 void exitWithError(std::string message) {
     std::cerr << "ERROR: " << message << std::endl;
     std::exit(1);
 }
 
-/**
- * Get maximum count of hosts in subnet
- * 
- * @param s_addr subent mask in 0-32 format
-*/
 uint32_t getHostsCount(uint32_t mask) {
     if (mask == 32) {
         return 0;
@@ -47,24 +37,12 @@ uint32_t getHostsCount(uint32_t mask) {
     return (1 << (32 - mask)) - 2;
 }
 
-/**
- * @brief Signal handler.
- *  
- * @param sig signal 
-*/
 void handleExit(int sig) {
     Q_UNUSED(sig);
     closelog();
     exit(0);
 }
 
-/**
- * Parse network prefix
- * 
- * @param prefix Network prefix X.X.X.X/Y
- * 
- * @return subnet_t subnet structure 
-*/
 subnet_t parseNetworkPrefix(std::string prefix) {
     subnet_t subnet;
 
@@ -108,30 +86,20 @@ subnet_t parseNetworkPrefix(std::string prefix) {
     return subnet;
 }
 
-/**
- * Compare two subnets for std::find function used in parseOptions()
- * 
- * @param lhs Left hand side
- * @param rhs Right hand side
- * 
- * @return true if the addresses and masks are equal, false otherwise
-*/
 bool operator==(const subnet_t &lhs, const subnet_t &rhs) {
     return lhs.network_address.s_addr == rhs.network_address.s_addr && lhs.mask_address.s_addr == rhs.mask_address.s_addr;
 }
 
-/**
- * Parse command line options
- * 
- * @param argc Count of args
- * @param argv Args
-*/
+void printHelp() {
+    std::cout << "Usage: ./dhcp-stats [-h] [-r <filename>] [-i <interface-name>] <ip-prefix> [ <ip-prefix> [ ... ] ]" << std::endl;
+}
+
 options_t parseOptions(int argc, char * argv[]) {
     options_t options;
 
     int opt{};
 
-    while ((opt = getopt(argc, argv, "-r:-i:")) != -1) {
+    while ((opt = getopt(argc, argv, "-r:-i:-h")) != -1) {
         switch (opt) {
             case 'r':
                 options.filename = optarg;
@@ -140,6 +108,10 @@ options_t parseOptions(int argc, char * argv[]) {
             case 'i':
                 options.interface = optarg;
                 options.mode = 2;
+                break;
+            case 'h':
+                printHelp();
+                exit(0);
                 break;
             default:
                 if (optarg[0] == '-') {
@@ -167,7 +139,6 @@ options_t parseOptions(int argc, char * argv[]) {
     return options;
 }
 
-/** Initialize ncurses */
 void initNcurses() {
     initscr();
     erase();
@@ -175,16 +146,10 @@ void initNcurses() {
     noecho();
 }
 
-/** Print header of ncurses win */
 void ncurseHeaderPrint() {
     printw("IP-Prefix\t\tMax-hosts\tAllocated addresses\tUtilization\t\n");
 }
 
-/** 
- * Ncurses dynamic window 
- * 
- * @param options Options for printing prefixes
- * */
 void ncurseWindowPrint() {
     initNcurses();
 
@@ -221,14 +186,6 @@ void offlineStatsPrint() {
     }
 }
 
-/**
- * Check whether the address is in the subnet
- * 
- * @param address address to be checked
- * @param subnet subnet 
- * 
- * @return true if address is in subnet, false otherwise 
-*/
 bool isIpInSubnet(struct in_addr address, subnet_t subnet) {
     if (subnet.max_hosts == 0) {
         return false;
@@ -245,13 +202,6 @@ bool isIpInSubnet(struct in_addr address, subnet_t subnet) {
     return false;
 }
 
-/**
- * Print warning to syslog and stdout if 50 % of the prefix is allocated
- * 
- * @param prefix Prefix to be printed
- * 
- * @return true if the warning has been printed
-*/
 bool printWarning(std::string prefix) {
     syslog(LOG_NOTICE, "prefix %s exceeded 50%% of allocations", prefix.c_str());
     std::cout << "prefix " << prefix << " exceeded 50% of allocations" << std::endl;
@@ -259,37 +209,18 @@ bool printWarning(std::string prefix) {
     return true;
 }
 
-/**
- * Print critical warning to syslog and stdout if 80 % of the prefix is allocated
- * 
- * @param prefix Prefix to be printed
- * 
- * @return true if the warning has been printed
-*/
 bool printCritical(std::string prefix) {
     syslog(LOG_NOTICE, "prefix %s exceeded 80%% of allocations (critical)", prefix.c_str());
 
     return true;
 }
 
-/**
- * Print information about 100 % of the prefix is allocated
- * 
- * @param prefix Prefix to be printed
- * 
- * @return true if the warning has been printed
-*/
 bool printFullUtilization(std::string prefix) {
     syslog(LOG_NOTICE, "no more addresses in prefix %s", prefix.c_str());
 
     return true;
 }
 
-/**
- * Add address to the prefix
- * 
- * @param address Address to be added
-*/
 void addAddress(struct in_addr address) {
     for (subnet_t &prefix : subnets) {
         if (isIpInSubnet(address, prefix)) {
@@ -324,13 +255,6 @@ void addAddress(struct in_addr address) {
     }
 }
 
-/**
- * Callback function for pcap_loop
- * 
- * @param handle Handle to the opened file
- * @param header Header of the packet
- * @param packet packet
-*/
 void packetCallback(u_char * handle, const struct pcap_pkthdr * header, const u_char * packet) {
     Q_UNUSED(handle);
     Q_UNUSED(header);
@@ -371,14 +295,6 @@ void packetCallback(u_char * handle, const struct pcap_pkthdr * header, const u_
     }
 }
 
-
-/** 
- * Open pcap file from the specified -f option
- * 
- * @param filename path to the pcap file
- * 
- * @return pcap_t * handle
-*/
 pcap_t * openPcapFile(std::string filename) {
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_t * handle;
@@ -391,14 +307,6 @@ pcap_t * openPcapFile(std::string filename) {
     return handle;
 }
 
-/**
- * Open pcap file from the specified --interface option
- * 
- * @param interface name of the interface
- * @param net network address
- * 
- * @return pcap_t * handle
-*/
 pcap_t * openPcapLive(std::string interface) {
     // https://www.tcpdump.org/pcap.html
     char errbuf[PCAP_ERRBUF_SIZE];
