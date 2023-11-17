@@ -54,6 +54,7 @@ uint32_t getHostsCount(uint32_t mask) {
 */
 void handleExit(int sig) {
     Q_UNUSED(sig);
+    closelog();
     exit(0);
 }
 
@@ -205,6 +206,19 @@ void ncurseWindowPrint() {
 
     refresh();
     timeout(1000);
+}
+
+void offlineStatsPrint() {
+    std::cout << std::endl << "IP-Prefix\t\tMax-hosts\tAllocated addresses\tUtilization\t" << std::endl;
+
+    for (const subnet_t &prefix : subnets) {
+        printf("%-18s\t%-10u\t%-10d\t\t%.2f %%\n", 
+            prefix.to_print.c_str(),
+            prefix.max_hosts,
+            prefix.allocated,
+            prefix.utilization
+        );
+    }
 }
 
 /**
@@ -447,18 +461,11 @@ int main(int argc, char * argv[]) {
 
     pcap_loop(handle, 0, packetCallback, nullptr);
 
-    if (options.mode == 1) {
-        std::cout << std::endl << "IP-Prefix\t\tMax-hosts\tAllocated addresses\tUtilization\t" << std::endl;
-
-        for (const subnet_t &prefix : subnets) {
-            printf("%-18s\t%-10u\t%-10d\t\t%.2f %%\n", 
-                prefix.to_print.c_str(),
-                prefix.max_hosts,
-                prefix.allocated,
-                prefix.utilization
-            );
-        }
-    }
-
+    pcap_close(handle);
     closelog();
+
+    // offline mode, '-r' argument 
+    if (options.mode == 1) {
+        offlineStatsPrint();
+    }
 }
