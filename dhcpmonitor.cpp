@@ -52,7 +52,7 @@ uint32_t getHostsCount(uint32_t mask) {
  *  
  * @param sig signal 
 */
-void handle_exit(int sig) {
+void handleExit(int sig) {
     Q_UNUSED(sig);
     exit(0);
 }
@@ -81,14 +81,19 @@ subnet_t parseNetworkPrefix(std::string prefix) {
 
     uint32_t mask = std::stoi(prefix.substr(pos + 1));
     if (mask == 0) {
-        exitWithError("Prefix X.X.X.X/0 is not allowed.");
+        // if it's not 0.0.0.0/0, then it's invalid
+        if (subnet.network_address.s_addr != 0) {
+            exitWithError("Prefix X.X.X.X/0 is not allowed.");
+        }
+
+        subnet.mask_address.s_addr = 0;
+    } else {
+        // if mask is 24, then 1 << (32 - mask) is 0x1000000
+        // 1 << (32 - mask) - 1 is 0x00FFFFFF
+        // NOT (~) flips it to 0xFF000000
+        // htonl converts it to network byte order (big endian), so it's 0x000000FF
+        subnet.mask_address.s_addr = htonl(~((1 << (32 - mask)) - 1));
     }
-    
-    // if mask is 24, then 1 << (32 - mask) is 0x1000000
-    // 1 << (32 - mask) - 1 is 0x00FFFFFF
-    // NOT (~) flips it to 0xFF000000
-    // htonl converts it to network byte order (big endian), so it's 0x000000FF
-    subnet.mask_address.s_addr = htonl(~((1 << (32 - mask)) - 1));
 
     subnet.broadcast_address.s_addr = subnet.network_address.s_addr | ~subnet.mask_address.s_addr;
 
@@ -165,8 +170,8 @@ options_t parseOptions(int argc, char * argv[]) {
 void initNcurses() {
     initscr();
     erase();
-    //cbreak(); // handle the CTRL+C key, but do not buffer input
-    //noecho();
+    cbreak(); // handle the CTRL+C key, but do not buffer input
+    noecho();
 }
 
 /** Print header of ncurses win */
@@ -296,6 +301,11 @@ void addAddress(struct in_addr address) {
             }
 
             prefix.hosts.push_back(inet_ntoa(address));
+
+            // sort prefixes by utilization
+            std::sort(subnets.begin(), subnets.end(), [](const subnet_t &lhs, const subnet_t &rhs) {
+                return lhs.utilization > rhs.utilization;
+            });
         }
     }
 }
@@ -308,26 +318,45 @@ void addAddress(struct in_addr address) {
  * @param packet packet
 */
 void packetCallback(u_char * handle, const struct pcap_pkthdr * header, const u_char * packet) {
-    struct ether_header * ethernet = (struct ether_header *) packet;
+    Q_UNUSED(handle);
+    Q_UNUSED(header);
 
-    (void) handle;
-    (void) header;
+    struct ether_header * ethernet = (struct ether_header *) packet;
+    struct ip * ip = (struct ip *) (packet + sizeof(struct ether_header));
+
+    // packet should be large enough to contain eth, ip and dhcp headers
+    if (ntohs(ip->ip_len) < (ETHER_H_SIZE + IP_H_SIZE + UDP_H_SIZE + sizeof(struct dhcp_packet))) {
+        return;
+    }
 
     if (ntohs(ethernet->ether_type) == ETHERTYPE_IP) {
-        struct dhcp_packet * dhcp = (struct dhcp_packet *) (packet + sizeof(struct udphdr) + sizeof(struct ip) + sizeof(struct ether_header));
+        struct dhcp_packet * dhcp = (struct dhcp_packet *) (packet + ETHER_H_SIZE + IP_H_SIZE + UDP_H_SIZE);
 
-        // https://cs.uwaterloo.ca/twiki/pub/CF/DhcpDebug/dhcp.c
-        if (dhcp->options[6] == DHCPACK) {
-            // ciaddr : will be filled by client and is used only in BOUND,RENEW and REBINDING state
-            // yiaddr :Filled by server and sent to client in DHCPOFFER and DHCPACK.
-            addAddress(dhcp->yiaddr);
-        } else if (dhcp->options[6] == DHCPDECLINE) {
-            std::cout << "DHCP DECLINE" << std::endl;
+        if (dhcp->magic_cookie != htonl(DHCP_MAGIC_COOKIE)) {
+            return;
+        }
+
+        // the options are right after the magic cookie set
+        const u_char * dhcp_options = packet + ETHER_H_SIZE + IP_H_SIZE + UDP_H_SIZE + sizeof(struct dhcp_packet);
+        int16_t dhcp_options_len = (ip->ip_len + ETHER_H_SIZE) - IP_H_SIZE - UDP_H_SIZE - sizeof(struct dhcp_packet);
+
+        for (u_char options_code = dhcp_options[0]; options_code != 255 && dhcp_options_len > 0; options_code = dhcp_options[0]) {
+            char field_len = dhcp_options[1];
+
+            if (options_code == 53 && field_len == 1 && dhcp_options[2] == DHCPACK && dhcp->op == 2) {
+                addAddress(dhcp->yiaddr);
+            }
+
+            dhcp_options += field_len + 2;
+            dhcp_options_len -= field_len + 2;
         }
     }
 
-    ncurseWindowPrint();
+    if (stdscr != nullptr) {
+        ncurseWindowPrint();
+    }
 }
+
 
 /** 
  * Open pcap file from the specified -f option
@@ -385,7 +414,7 @@ int main(int argc, char * argv[]) {
     pcap_t * handle;
     setlogmask(LOG_UPTO (LOG_NOTICE));
     openlog("dhcp-stats", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
-    std::signal(SIGINT, handle_exit);
+    std::signal(SIGINT, handleExit);
 
     switch (options.mode) {
         case 1:
@@ -410,13 +439,26 @@ int main(int argc, char * argv[]) {
         exitWithError("Unable to install filter.");
     }
 
+    // live mode, '-i' argument (interface)
     if (options.mode == 2) {
         initscr(); 
         ncurseWindowPrint();
     }
 
-
     pcap_loop(handle, 0, packetCallback, nullptr);
+
+    if (options.mode == 1) {
+        std::cout << std::endl << "IP-Prefix\t\tMax-hosts\tAllocated addresses\tUtilization\t" << std::endl;
+
+        for (const subnet_t &prefix : subnets) {
+            printf("%-18s\t%-10u\t%-10d\t\t%.2f %%\n", 
+                prefix.to_print.c_str(),
+                prefix.max_hosts,
+                prefix.allocated,
+                prefix.utilization
+            );
+        }
+    }
 
     closelog();
 }

@@ -17,6 +17,12 @@
 #define DHCPNACK        6
 #define DHCPRELEASE     7
 
+#define ETHER_H_SIZE 14
+#define IP_H_SIZE 20
+#define UDP_H_SIZE 8
+
+#define DHCP_MAGIC_COOKIE 0x63825363
+
 #define Q_UNUSED(x) (void)x;
 
 struct dhcp_packet {
@@ -34,7 +40,7 @@ struct dhcp_packet {
         unsigned char chaddr [MAX_DHCP_CHADDR_LENGTH];      /* hardware address of this machine */
         char sname [MAX_DHCP_SNAME_LENGTH];    /* name of DHCP server */
         char file [MAX_DHCP_FILE_LENGTH];      /* boot file name (used for diskless booting?) */
-	    char options[MAX_DHCP_OPTIONS_LENGTH];  /* options */
+        uint32_t magic_cookie;          /* fixed first four option bytes for DHCP, not BOOTP */
 };
 
 /** Subnet */
