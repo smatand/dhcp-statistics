@@ -244,6 +244,20 @@ bool printFullUtilization(std::string prefix) {
     return true;
 }
 
+void checkToPrintWarning(subnet_t &prefix) {
+    if (prefix.utilization >= 50.0 && !prefix.warning_printed) {
+        prefix.warning_printed = printWarning(prefix.to_print);
+    } 
+
+    if (prefix.utilization >= 80.0 && !prefix.critical_warning_printed) {
+        prefix.critical_warning_printed = printCritical(prefix.to_print);
+    }
+
+    if (prefix.utilization == 100.0) {
+        printFullUtilization(prefix.to_print);
+    }
+}
+
 void addAddress(struct in_addr address) {
     for (subnet_t &prefix : subnets_g) {
         if (isIpInSubnet(address, prefix)) {
@@ -256,17 +270,7 @@ void addAddress(struct in_addr address) {
             prefix.allocated++;
             prefix.utilization = static_cast<float>(prefix.allocated) / prefix.max_hosts * 100;
 
-            if (prefix.utilization >= 50.0 && !prefix.warning_printed) {
-                prefix.warning_printed = printWarning(prefix.to_print);
-            } 
-            
-            if (prefix.utilization >= 80.0 && !prefix.critical_warning_printed) {
-                prefix.critical_warning_printed = printCritical(prefix.to_print);
-            }
-
-            if (prefix.utilization == 100.0) {
-                printFullUtilization(prefix.to_print);
-            }
+            checkToPrintWarning(prefix);
 
             prefix.hosts.push_back(inet_ntoa(address));
 

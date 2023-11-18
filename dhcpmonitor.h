@@ -164,7 +164,7 @@ bool isIpInSubnet(struct in_addr address, subnet_t subnet);
 bool printWarning(std::string prefix);
 
 /**
- * Print critical warning to syslog and stdout if 80 % of the prefix is allocated
+ * Print critical warning to syslog if 80 % of the prefix is allocated
  * 
  * @param prefix Prefix to be printed
  * 
@@ -173,13 +173,20 @@ bool printWarning(std::string prefix);
 bool printCritical(std::string prefix);
 
 /**
- * Print information about 100 % of the prefix is allocated
+ * Print syslog information about 100 % of the prefix is allocated 
  * 
  * @param prefix Prefix to be printed
  * 
  * @return true if the warning has been printed
 */
 bool printFullUtilization(std::string prefix);
+
+/**
+ * Check whether something has to be printed about the prefix to syslog
+ * 
+ * @param prefix Prefix to be checked
+*/
+void checkToPrintWarning(subnet_t &prefix);
 
 /**
  * Add address to the prefix
