@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <getopt.h>
 #include <unistd.h>
 #include <algorithm>
 
@@ -96,16 +97,32 @@ void printHelp() {
 
 options_t parseOptions(int argc, char * argv[]) {
     options_t options;
+    options.mode = 0;
+
+    struct option long_options[] = {
+        {"read", required_argument, nullptr, 'r'},
+        {"interface", required_argument, nullptr, 'i'},
+        {"help", no_argument, nullptr, 'h'},
+        { NULL, 0, NULL, 0 }
+    };
 
     int opt{};
 
-    while ((opt = getopt(argc, argv, "-r:-i:-h")) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:i:h", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
+                if (options.mode == 2) {
+                    exitWithError("Specify either -r or -i option.");
+                }
+
                 options.filename = optarg;
                 options.mode = 1;
                 break;
             case 'i':
+                if (options.mode == 1) {
+                    exitWithError("Specify either -r or -i option.");
+                }
+
                 options.interface = optarg;
                 options.mode = 2;
                 break;
@@ -114,17 +131,22 @@ options_t parseOptions(int argc, char * argv[]) {
                 exit(0);
                 break;
             default:
-                if (optarg[0] == '-') {
-                    exitWithError("Unknown option: " + std::string{optarg});
-                } else {
-                    subnet_t subnet_to_add = parseNetworkPrefix(optarg);
+                exitWithError("Unknown option: " + std::string{optarg});
+        }
 
-                    if (std::find(subnets.begin(), subnets.end(), subnet_to_add) != subnets.end()) {
-                        std::cerr << "Duplicate prefix in an argument: " << optarg << std::endl;
-                    } else {
-                        subnets.push_back(subnet_to_add);
-                    }
-                }
+    }
+
+    if (optind >= argc) {
+        exitWithError("No prefixes specified");
+    }
+
+    for (int i = optind; i < argc; i++) {
+        subnet_t subnet_to_add = parseNetworkPrefix(argv[i]);
+
+        if (std::find(subnets.begin(), subnets.end(), subnet_to_add) != subnets.end()) {
+            std::cerr << "Duplicate prefix in an argument: " << argv[i] << std::endl;
+        } else {
+            subnets.push_back(subnet_to_add);
         }
     }
 
@@ -278,15 +300,15 @@ void packetCallback(u_char * handle, const struct pcap_pkthdr * header, const u_
         const u_char * dhcp_options = packet + ETHER_H_SIZE + IP_H_SIZE + UDP_H_SIZE + sizeof(struct dhcp_packet);
         int16_t dhcp_options_len = (ip->ip_len + ETHER_H_SIZE) - IP_H_SIZE - UDP_H_SIZE - sizeof(struct dhcp_packet);
 
-        for (u_char options_code = dhcp_options[0]; options_code != 255 && dhcp_options_len > 0; options_code = dhcp_options[0]) {
-            char field_len = dhcp_options[1];
+        for (u_char options_code = dhcp_options[0]; options_code != DHCP_OPTION_END && dhcp_options_len > 0; options_code = dhcp_options[0]) {
+            char option_len = dhcp_options[1];
 
-            if (options_code == 53 && field_len == 1 && dhcp_options[2] == DHCPACK && dhcp->op == 2) {
+            if (dhcp->op == DHCP_OP_REPLY && option_len == 1 && dhcp_options[2] == DHCPACK && options_code == DHCP_OPTION_MESSAGE_TYPE) {
                 addAddress(dhcp->yiaddr);
             }
 
-            dhcp_options += field_len + 2;
-            dhcp_options_len -= field_len + 2;
+            dhcp_options += option_len + 2;
+            dhcp_options_len -= option_len + 2;
         }
     }
 

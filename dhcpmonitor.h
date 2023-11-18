@@ -22,6 +22,11 @@
 #define UDP_H_SIZE 8
 
 #define DHCP_MAGIC_COOKIE 0x63825363
+#define DHCP_OP_REPLY 2
+
+#define DHCP_OPTION_MESSAGE_TYPE 53
+#define DHCP_OPTION_END 255
+
 
 #define Q_UNUSED(x) (void)x;
 
