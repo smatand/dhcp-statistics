@@ -23,7 +23,8 @@
 
 #include "dhcpmonitor.h"
 
-std::vector<subnet_t> subnets{};
+
+std::vector<subnet_t> subnets_g{};
 
 void exitWithError(std::string message) {
     std::cerr << "ERROR: " << message << std::endl;
@@ -143,14 +144,14 @@ options_t parseOptions(int argc, char * argv[]) {
     for (int i = optind; i < argc; i++) {
         subnet_t subnet_to_add = parseNetworkPrefix(argv[i]);
 
-        if (std::find(subnets.begin(), subnets.end(), subnet_to_add) != subnets.end()) {
+        if (std::find(subnets_g.begin(), subnets_g.end(), subnet_to_add) != subnets_g.end()) {
             std::cerr << "Duplicate prefix in an argument: " << argv[i] << std::endl;
         } else {
-            subnets.push_back(subnet_to_add);
+            subnets_g.push_back(subnet_to_add);
         }
     }
 
-    if (subnets.empty()) {
+    if (subnets_g.empty()) {
         exitWithError("No prefixes specified");
     }
 
@@ -182,7 +183,7 @@ void ncurseWindowPrint() {
     ncurseHeaderPrint();
     attroff(COLOR_PAIR(1));
 
-    for (const subnet_t &prefix : subnets) {
+    for (const subnet_t &prefix : subnets_g) {
         printw("%-18s\t%-10u\t%-10d\t\t%.2f %%\n", 
             prefix.to_print.c_str(),
             prefix.max_hosts,
@@ -198,7 +199,7 @@ void ncurseWindowPrint() {
 void offlineStatsPrint() {
     std::cout << std::endl << "IP-Prefix\t\tMax-hosts\tAllocated addresses\tUtilization\t" << std::endl;
 
-    for (const subnet_t &prefix : subnets) {
+    for (const subnet_t &prefix : subnets_g) {
         printf("%-18s\t%-10u\t%-10d\t\t%.2f %%\n", 
             prefix.to_print.c_str(),
             prefix.max_hosts,
@@ -244,7 +245,7 @@ bool printFullUtilization(std::string prefix) {
 }
 
 void addAddress(struct in_addr address) {
-    for (subnet_t &prefix : subnets) {
+    for (subnet_t &prefix : subnets_g) {
         if (isIpInSubnet(address, prefix)) {
             std::string address_str = inet_ntoa(address);
 
@@ -270,7 +271,7 @@ void addAddress(struct in_addr address) {
             prefix.hosts.push_back(inet_ntoa(address));
 
             // sort prefixes by utilization
-            std::sort(subnets.begin(), subnets.end(), [](const subnet_t &lhs, const subnet_t &rhs) {
+            std::sort(subnets_g.begin(), subnets_g.end(), [](const subnet_t &lhs, const subnet_t &rhs) {
                 return lhs.utilization > rhs.utilization;
             });
         }
