@@ -1,0 +1,72 @@
+.TH DHCP-STATS 1 "November 2023" "1.0" "dhcp-stats man page"
+
+.SH NAME
+dhcp-stats \- display statistics for DHCP server
+
+.SH SYNOPSIS
+.B dhcp-stats
+\fB\-r\fR \fIFILENAME\fR
+\fIIP-PREFIX\fR [ \fIIP-PREFIX\fR ... ]
+
+.B dhcp-stats
+\fB\-i\fR \fIINTERFACE-NAME\fR
+\fIIP-PREFIX\fR [ \fIIP-PREFIX\fR ... ]
+
+.SH REQUIREMENTS 
+.B dhcp-stats 
+requires a Linux operating system with libpcap, syslog and ncurses installed. It also requires root privileges to access the network interface.
+
+.SH DESCRIPTION
+.B dhcp-stats
+command displays statistics of each given IP-PREFIX for a DHCP server. It can be used to monitor the usage of IP addresses in a network and to identify potential issues with the DHCP configuration. It uses syslog to alert the system administrator about prefixes filling up more than 50 %, 80 %, or 100 % of its capacity.
+.PP 
+.B dhcp-stats
+does not use promiscuous mode to capture packets, so it is expected to run it at the system where the DHCP server is running.
+
+.SH OPTIONS
+.TP
+.BR \-r ", " \-\-read =\fIFILENAME\fR
+Read statistics from a pcap file instead of sniffing on an interface. Prints the stats directly to stdout.
+
+.TP
+.BR \-i ", " \-\-interface =\fIINTERFACE-NAME\fR
+Specify the name of the interface to sniff on without using promiscuous mode. Prints the statistics in a ncurses window that is frequently updated.
+
+.SH ARGUMENTS
+.IP "\fIIP-PREFIX\fR"
+The prefix of the subnet where the statistics will be computed on.
+
+.SH RETURN CODES
+.B dhcp-stats
+returns 0 for successful read of the pcap file or ending program with SIGINT signal, 1 if 
+.B dhcp-stats
+returns an error.
+
+.SH EXAMPLES
+To display statistics for the subnets 192.168.1.0/24, 172.16.32.0/24, and 192.168.0.0/22 on interface eth0, run:
+
+.B dhcp-stats -i eth0 192.168.1.0/24 172.16.32.0/24 192.168.0.0/22
+
+To display statistics for the subnets 192.168.1.0/24, 192.168.0.0/22, and 172.16.32.0/24 on interface eth0, run:
+
+.B dhcp-stats --interface eth0 192.168.1.0/24 192.168.0.0/22 172.16.32.0/24
+
+To display statistics for the subnet 192.168.1.0/24 from a pcap file, run:
+
+.B dhcp-stats -r stats.pcap 192.168.1.0/24
+
+To see help info, run:
+.B dhcp-stats -h
+
+.SH SEE ALSO
+.BR netstat (8),
+.BR tcpdump (8)
+
+.SH AUTHOR
+dhcp-stats was written by Andrej Smatana <xsmata03@stud.fit.vutbr.cz>.
+
+.SH REPORTING BUGS
+Report bugs to <xsmata03@stud.fit.vutbr.cz>.
+
+.SH COPYRIGHT
+Copyright © 2023 Andrej Smatana. This is free software; see the source for copying conditions. There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
