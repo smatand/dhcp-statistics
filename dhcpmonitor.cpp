@@ -252,10 +252,12 @@ bool printFullUtilization(std::string prefix) {
 void checkToPrintWarning(subnet_t &prefix) {
     if (prefix.utilization >= 50.0 && !prefix.warning_printed) {
         prefix.warning_printed = printWarning(prefix.to_print);
+        prefix.warning_printed = true;
     } 
 
     if (prefix.utilization >= 80.0 && !prefix.critical_warning_printed) {
         prefix.critical_warning_printed = printCritical(prefix.to_print);
+        prefix.critical_warning_printed = true;
     }
 
     if (prefix.utilization == 100.0) {
