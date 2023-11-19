@@ -1,3 +1,8 @@
+/**
+ * @file dhcpmonitor.cpp
+ * @author Andrej Smatana <xsmata03>
+*/
+
 #ifndef DHCPMONITOR_H
 #define DHCPMONITOR_H
 

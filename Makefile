@@ -1,4 +1,4 @@
-# Makefile
+# Andrej Smatana xsmata03
 CXX := g++
 
 CXXFLAGS := -std=c++20 -Wall -Wextra -Werror
