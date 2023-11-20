@@ -50,6 +50,24 @@ void handleExit(int sig) {
     exit(0);
 }
 
+std::string getNetworkAddress(std::string address, int mask) {
+    // convert the address to binary format
+    struct in_addr inAddress;
+    inet_pton(AF_INET, address.c_str(), &inAddress);
+    uint32_t binaryAddress = ntohl(inAddress.s_addr);
+
+    // calculate the network address by applying the subnet mask
+    uint32_t binaryMask = (mask == 0) ? 0 : (~0 << (32 - mask));
+    uint32_t networkAddress = binaryAddress & binaryMask;
+
+    // convert the network address back to string format
+    inAddress.s_addr = htonl(networkAddress);
+    char networkAddressStr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &inAddress, networkAddressStr, INET_ADDRSTRLEN);
+
+    return networkAddressStr;
+}
+
 subnet_t parseNetworkPrefix(std::string prefix) {
     subnet_t subnet;
 
@@ -61,17 +79,15 @@ subnet_t parseNetworkPrefix(std::string prefix) {
 
     // only 0.0.0.0 - 255.255.255.255
     std::string address = prefix.substr(0, pos);
-    if (inet_pton(AF_INET, address.c_str(), &subnet.network_address) != 1) {
+
+    uint32_t mask = std::stoi(prefix.substr(pos + 1));
+
+    std::string modifiedNetAddress = getNetworkAddress(address, mask);
+    if (inet_pton(AF_INET, modifiedNetAddress.c_str(), &subnet.network_address) != 1) {
         exitWithError("This address is not in IPv4 format: " + address);
     }
 
-    uint32_t mask = std::stoi(prefix.substr(pos + 1));
     if (mask == 0) {
-        // if it's not 0.0.0.0/0, then it's invalid
-        if (subnet.network_address.s_addr != 0) {
-            exitWithError("Prefix X.X.X.X/0 is not allowed.");
-        }
-
         subnet.mask_address.s_addr = 0;
     } else {
         // if mask is 24, then 1 << (32 - mask) is 0x1000000
@@ -315,7 +331,7 @@ void packetCallback(u_char * handle, const struct pcap_pkthdr * header, const u_
         for (u_char options_code = dhcp_options[0]; options_code != DHCP_OPTION_END && dhcp_options_len > 0; options_code = dhcp_options[0]) {
             char option_len = dhcp_options[1];
 
-            if (dhcp->op == DHCP_OP_REPLY && option_len == 1 && dhcp_options[2] == DHCPACK && options_code == DHCP_OPTION_MESSAGE_TYPE) {
+            if (dhcp->op == DHCP_OP_REPLY && option_len == 1 && dhcp_options[2] == DHCPACK && options_code == DHCP_OPTION_MESSAGE_TYPE && dhcp->yiaddr.s_addr != 0) {
                 addAddress(dhcp->yiaddr);
             }
 

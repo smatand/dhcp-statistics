@@ -108,6 +108,17 @@ uint32_t getHostsCount(uint32_t mask);
 void handleExit(int sig);
 
 /**
+ * Change the user given address in prefix to network
+ * 
+ * @param address Address in prefix
+ * @param mask Mask in prefix
+ * 
+ * @return std::string network address
+ * 
+*/
+std::string getNetworkAddress(std::string address, int mask);
+
+/**
  * Parse network prefix
  * 
  * @param prefix Network prefix X.X.X.X/Y
