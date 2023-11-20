@@ -35,6 +35,22 @@
 
 #define Q_UNUSED(x) (void)x;
 
+/*
+ * Copyright:
+ *  Program: DHCP plugin for Nagios
+ *  Author: 2001-2004 Ethan Galstad (nagios@nagios.org)
+ *  Copyright: (c) 2001-2004 Ethan Galstad (nagios@nagios.org)
+ *  License: GPL
+ *  Modified by: Mike Gore 25 Aug 2005
+ *  Notes:
+ *     Modified for standalone operation - removed usage2,usage4, etc
+ *     Removed printf(_( style)) and replaced with printf()
+ *     added standalone COPYRIGHT string and print_revision()
+ *     Added ability to set MAC address of client
+ *  Further Modified by: Andrej Smatana, 20th November 2023
+ *  Notes:
+ *      Replace options field by magic_cookie
+ */
 struct dhcp_packet {
         u_int8_t  op;                   /* packet type */
         u_int8_t  htype;                /* type of hardware address for this machine (Ethernet, etc) */
